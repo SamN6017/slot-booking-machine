@@ -1,0 +1,8 @@
+{
+  "name": "slot-booking-machine",
+  "compatibility_date": "2026-06-28",
+
+  "assets": {
+    "directory": "dist/slot-booking-machine/browser"
+  }
+}
