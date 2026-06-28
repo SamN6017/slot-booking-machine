@@ -3,14 +3,19 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AuthService } from './auth-service';
 import { environment } from '../../environments/environment';
 
-export interface Machine { id: number; name: string; status: string; }
+export interface Machine {
+  id: number;
+  name: string;
+  status: string;
+}
+
 export interface Booking {
   id: number;
   machine_id: number;
   user_id: string;
   user_email: string;
-  start_time: string;
-  end_time: string;
+  start_time: string; // UTC ISO String representation
+  end_time: string;   // UTC ISO String representation
 }
 
 @Injectable({ providedIn: 'root' })
@@ -18,17 +23,18 @@ export class BookingService {
   private authService = inject(AuthService);
   private supabase: SupabaseClient = createClient(environment.supabaseUrl, environment.supabaseKey);
 
+  // Core reactive application state via Signals
   public machines = signal<Machine[]>([]);
   public currentWeekBookings = signal<Booking[]>([]);
 
   constructor() {
-    // START LISTENING TO REALTIME CHANGES INSTANTLY ON APP BOOT
+    // Initialize the real-time synchronization socket on service instantiation
     this.setupRealtimeListener();
   }
 
   /**
-   * Connects a permanent WebSocket stream to Supabase.
-   * Instantly handles external inserts and deletes without pulling data manually.
+   * Subscribes to real-time events via WebSockets from Supabase.
+   * Seamlessly applies remote changes to the signal array in real time.
    */
   private setupRealtimeListener(): void {
     this.supabase
@@ -39,12 +45,16 @@ export class BookingService {
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const newBooking = payload.new as Booking;
-            // Append the new booking to our reactive signal stream
-            this.currentWeekBookings.update(current => [...current, newBooking]);
+            // Atomic state appendment across all concurrent open client views
+            this.currentWeekBookings.update(current => {
+              // Deduplicate checking to prevent matching internal insert state bounces
+              if (current.some(b => b.id === newBooking.id)) return current;
+              return [...current, newBooking];
+            });
           }
           else if (payload.eventType === 'DELETE') {
             const oldBooking = payload.old as Partial<Booking>;
-            // Remove the deleted booking row from our signal array instantly
+            // Instantly remove slot from local matrix ledger
             this.currentWeekBookings.update(current =>
               current.filter(b => b.id !== oldBooking.id)
             );
@@ -54,6 +64,9 @@ export class BookingService {
       .subscribe();
   }
 
+  /**
+   * Loads all available target machines
+   */
   async loadMachines(): Promise<void> {
     const { data, error } = await this.supabase
       .from('machines')
@@ -64,6 +77,9 @@ export class BookingService {
     this.machines.set(data || []);
   }
 
+  /**
+   * Performed on initialization to populate the grid baseline
+   */
   async loadWeeklyBookings(): Promise<void> {
     const { data, error } = await this.supabase
       .from('bookings')
@@ -73,19 +89,43 @@ export class BookingService {
     this.currentWeekBookings.set(data || []);
   }
 
+  /**
+   * Core validation processor and transaction pipeline for slots
+   */
   async createBooking(machineId: number, startTime: Date): Promise<void> {
     const userId = this.authService.currentUserId();
     const userEmail = this.authService.currentUser()?.email;
 
     if (!userId || !userEmail) {
-      throw new Error('Authentication required. Please log in.');
+      throw new Error('Authentication required: Access session context missing.');
     }
 
     const endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
+
+    // --- RULE 1: Weekday Filter Verification (Mon = 1, ..., Fri = 5) ---
+    const dayOfWeek = startTime.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      throw new Error('Operation Blocked: Machines can only be allocated on weekdays.');
+    }
+
+    // --- RULE 2: Shift Boundaries Check (8:00 AM - 8:00 PM) ---
+    const startHour = startTime.getHours();
+    const endHour = endTime.getHours();
+    const endMinutes = endTime.getMinutes();
+    if (startHour < 8 || (endHour > 20 || (endHour === 20 && endMinutes > 0))) {
+      throw new Error('Operation Blocked: Slots must fall within building hours (8:00 AM - 8:00 PM).');
+    }
+
+    // --- RULE 3: Strict 30-Minute Interval Alignment Verification ---
+    const startMinutes = startTime.getMinutes();
+    if (startMinutes !== 0 && startMinutes !== 30) {
+      throw new Error('Operation Blocked: Slots must explicitly map to a 30-minute block boundary.');
+    }
+
     const isoStart = startTime.toISOString();
     const isoEnd = endTime.toISOString();
 
-    // --- Strict Local Overlap Validation Pre-Check ---
+    // --- RULE 4: Local Cache Race Condition Pre-Check Validation ---
     const holdsOverlap = this.currentWeekBookings().some(booking => {
       return (
         booking.machine_id === machineId &&
@@ -94,8 +134,11 @@ export class BookingService {
       );
     });
 
-    if (holdsOverlap) throw new Error('Slot conflict: This window was just taken by another teammate!');
+    if (holdsOverlap) {
+      throw new Error('Concurrency Conflict: This slot was captured by another teammate a brief moment ago.');
+    }
 
+    // Write verified ledger metrics straight to database row
     const { error } = await this.supabase
       .from('bookings')
       .insert([{
@@ -106,11 +149,13 @@ export class BookingService {
         end_time: isoEnd
       }]);
 
-    if (error) throw new Error(`Database error: ${error.message}`);
-    // Note: We don't need to manually call loadWeeklyBookings() here anymore 
-    // because our Realtime listener picks up our own inserts too!
+    if (error) throw new Error(`Database Write Error: ${error.message}`);
+    // Note: We don't manually fetch data here since the websocket handles tracking natively
   }
 
+  /**
+   * Removes reservation mapping securely by target ID parameters
+   */
   async cancelBooking(bookingId: number): Promise<void> {
     const { error } = await this.supabase
       .from('bookings')
@@ -118,8 +163,7 @@ export class BookingService {
       .eq('id', bookingId);
 
     if (error) {
-      throw new Error(`Failed to delete booking: ${error.message}`);
+      throw new Error(`Database Termination Error: ${error.message}`);
     }
-    // Realtime listener handles removing it locally automatically
   }
 }
