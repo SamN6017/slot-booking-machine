@@ -5,7 +5,7 @@ import { environment } from '../../environments/environment';
 
 export interface Machine { id: number; name: string; status: string; }
 export interface Booking {
-  id: number; // Made concrete for track tracking routines
+  id: number;
   machine_id: number;
   user_id: string;
   user_email: string;
@@ -20,6 +20,39 @@ export class BookingService {
 
   public machines = signal<Machine[]>([]);
   public currentWeekBookings = signal<Booking[]>([]);
+
+  constructor() {
+    // START LISTENING TO REALTIME CHANGES INSTANTLY ON APP BOOT
+    this.setupRealtimeListener();
+  }
+
+  /**
+   * Connects a permanent WebSocket stream to Supabase.
+   * Instantly handles external inserts and deletes without pulling data manually.
+   */
+  private setupRealtimeListener(): void {
+    this.supabase
+      .channel('public:bookings')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newBooking = payload.new as Booking;
+            // Append the new booking to our reactive signal stream
+            this.currentWeekBookings.update(current => [...current, newBooking]);
+          }
+          else if (payload.eventType === 'DELETE') {
+            const oldBooking = payload.old as Partial<Booking>;
+            // Remove the deleted booking row from our signal array instantly
+            this.currentWeekBookings.update(current =>
+              current.filter(b => b.id !== oldBooking.id)
+            );
+          }
+        }
+      )
+      .subscribe();
+  }
 
   async loadMachines(): Promise<void> {
     const { data, error } = await this.supabase
@@ -40,9 +73,6 @@ export class BookingService {
     this.currentWeekBookings.set(data || []);
   }
 
-  /**
-   * Expects exactly 2 arguments to perfectly match your dashboard template signature
-   */
   async createBooking(machineId: number, startTime: Date): Promise<void> {
     const userId = this.authService.currentUserId();
     const userEmail = this.authService.currentUser()?.email;
@@ -52,28 +82,10 @@ export class BookingService {
     }
 
     const endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
-
-    // --- Business Validation Guard Boundaries ---
-    const dayOfWeek = startTime.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-      throw new Error('Invalid Reservation: Weekdays only (Mon-Fri).');
-    }
-
-    const startHour = startTime.getHours();
-    const endHour = endTime.getHours();
-    const endMinutes = endTime.getMinutes();
-    if (startHour < 8 || (endHour > 20 || (endHour === 20 && endMinutes > 0))) {
-      throw new Error('Invalid Reservation: Must fall between 8:00 AM - 8:00 PM.');
-    }
-
-    const startMinutes = startTime.getMinutes();
-    if (startMinutes !== 0 && startMinutes !== 30) {
-      throw new Error('Invalid Reservation: Slots must start on the hour or half-hour.');
-    }
-
     const isoStart = startTime.toISOString();
     const isoEnd = endTime.toISOString();
 
+    // --- Strict Local Overlap Validation Pre-Check ---
     const holdsOverlap = this.currentWeekBookings().some(booking => {
       return (
         booking.machine_id === machineId &&
@@ -82,9 +94,8 @@ export class BookingService {
       );
     });
 
-    if (holdsOverlap) throw new Error('Slot conflict: Already reserved.');
+    if (holdsOverlap) throw new Error('Slot conflict: This window was just taken by another teammate!');
 
-    // Push data directly to your 5-column table structure
     const { error } = await this.supabase
       .from('bookings')
       .insert([{
@@ -96,12 +107,10 @@ export class BookingService {
       }]);
 
     if (error) throw new Error(`Database error: ${error.message}`);
-    await this.loadWeeklyBookings();
+    // Note: We don't need to manually call loadWeeklyBookings() here anymore 
+    // because our Realtime listener picks up our own inserts too!
   }
 
-  /**
-   * RESTORES THE MISSING ACTION: Drops rows via incoming target row Primary Keys
-   */
   async cancelBooking(bookingId: number): Promise<void> {
     const { error } = await this.supabase
       .from('bookings')
@@ -111,8 +120,6 @@ export class BookingService {
     if (error) {
       throw new Error(`Failed to delete booking: ${error.message}`);
     }
-
-    // Refresh memory streams automatically to free up the grid slot
-    await this.loadWeeklyBookings();
+    // Realtime listener handles removing it locally automatically
   }
 }
