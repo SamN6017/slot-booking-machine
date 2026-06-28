@@ -1,0 +1,80 @@
+<div class="container d-flex justify-content-center align-items-center min-vh-75 mt-5">
+    <div class="card shadow-lg border-0 rounded-3" style="max-width: 450px; width: 100%;">
+
+        <div class="card-header bg-dark text-white text-center py-4 rounded-top">
+            <h3 class="mb-0 fw-bold">
+                <i class="bi bi-shield-lock-fill me-2 text-warning"></i>
+                {{ isSignUpMode() ? 'Create Account' : 'Team Sign In' }}
+            </h3>
+            <p class="text-muted small mb-0 mt-1 text-light-50">Internal Machine Allocation Node</p>
+        </div>
+
+        <div class="card-body p-4">
+
+            @if (errorMessage()) {
+            <div class="alert alert-danger d-flex align-items-center bubble shadow-sm mb-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <div class="small">{{ errorMessage() }}</div>
+            </div>
+            }
+
+            @if (successMessage()) {
+            <div class="alert alert-success d-flex align-items-center shadow-sm mb-3" role="alert">
+                <i class="bi bi-check-circle-fill me-2"></i>
+                <div class="small">{{ successMessage() }}</div>
+            </div>
+            }
+
+            <form (submit)="onSubmit($event)">
+                <div class="mb-3">
+                    <label for="email" class="form-label small fw-semibold text-secondary">Email Address</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light text-muted border-end-0"><i
+                                class="bi bi-envelope"></i></span>
+                        <input type="email" id="email" class="form-control bg-light border-start-0"
+                            placeholder="name@company.com" [value]="email()"
+                            (input)="email.set($any($event.target).value)" required [disabled]="isLoading()" />
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label for="password" class="form-label small fw-semibold text-secondary">Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light text-muted border-end-0"><i class="bi bi-key"></i></span>
+                        <input type="password" id="password" class="form-control bg-light border-start-0"
+                            placeholder="••••••••" [value]="password()"
+                            (input)="password.set($any($event.target).value)" required [disabled]="isLoading()" />
+                    </div>
+                </div>
+
+                <button type="submit"
+                    class="btn btn-dark w-100 py-2.5 fw-bold text-uppercase d-flex justify-content-center align-items-center gap-2 shadow-sm"
+                    [disabled]="isLoading()">
+                    @if (isLoading()) {
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span>Processing...</span>
+                    } @else {
+                    <span>{{ isSignUpMode() ? 'Register Now' : 'Authenticate' }}</span>
+                    }
+                </button>
+            </form>
+
+            <div class="text-center mt-4 border-top pt-3">
+                @if (isSignUpMode()) {
+                <p class="small text-muted mb-0">
+                    Already have an active registration account?
+                    <a href="#" (click)="$event.preventDefault(); toggleMode()"
+                        class="text-decoration-none fw-bold text-primary ms-1">Sign In Here</a>
+                </p>
+                } @else {
+                <p class="small text-muted mb-0">
+                    New to the internal infrastructure ledger?
+                    <a href="#" (click)="$event.preventDefault(); toggleMode()"
+                        class="text-decoration-none fw-bold text-primary ms-1">Register Account</a>
+                </p>
+                }
+            </div>
+
+        </div>
+    </div>
+</div>
