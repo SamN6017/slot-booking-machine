@@ -23,12 +23,15 @@ export class Dashboard implements OnInit {
   timeSlots = signal<string[]>([]);
   expandedDayTime = signal<number | null>(null);
 
-  // Caches changes into an O(1) hash map for lag-free rendering
+  /**
+   * FIX: Caches changes into an O(1) hash map using direct literal database strings.
+   * This bypasses JavaScript's automatic UTC/local timezone manipulation on browser environments.
+   */
   bookingLookup = computed(() => {
     const map = new Map<string, Booking>();
     for (const b of this.bookings()) {
-      const timeMs = new Date(b.start_time).getTime();
-      const key = `${b.machine_id}_${timeMs}`;
+      // b.start_time is already a string format like: "2026-06-29 09:00:00"
+      const key = `${b.machine_id}_${b.start_time}`;
       map.set(key, b);
     }
     return map;
@@ -79,12 +82,20 @@ export class Dashboard implements OnInit {
     return slots;
   }
 
-  /**
-   * Corrected to match the exact template signature order: (machineId, targetDate, slotTimeString)
-   */
   getBookingAt(machineId: number, targetDate: Date, slotTimeString: string): Booking | null {
     const parsedDate = this.parseTimeToDate(slotTimeString, targetDate);
-    const key = `${machineId}_${parsedDate.getTime()}`;
+    
+    const pad = (num: number) => String(num).padStart(2, '0');
+    const yyyy = parsedDate.getFullYear();
+    const mm = pad(parsedDate.getMonth() + 1);
+    const dd = pad(parsedDate.getDate());
+    const hh = pad(parsedDate.getHours());
+    const min = pad(parsedDate.getMinutes());
+
+    // Matches 'YYYY-MM-DDTHH:mm:ss+00:00' exactly as it appears in your console log
+    const estLiteralStr = `${yyyy}-${mm}-${dd}T${hh}:${min}:00+00:00`;
+    const key = `${machineId}_${estLiteralStr}`;
+    
     return this.bookingLookup().get(key) || null;
   }
 
@@ -99,8 +110,10 @@ export class Dashboard implements OnInit {
         if (confirm('Do you want to release your time slot reservation?')) {
           try {
             await this.bookingService.cancelBooking(existingBooking.id);
-          } catch (err: any) {
-            alert(err.message);
+          } catch (err: unknown) {
+            // FIX: Explicitly typecast to safely extract message string
+            const message = err instanceof Error ? err.message : 'An unknown database termination error occurred.';
+            alert(message);
           }
         }
       }
@@ -108,8 +121,10 @@ export class Dashboard implements OnInit {
       try {
         const parsedDate = this.parseTimeToDate(slotTimeString, targetDate);
         await this.bookingService.createBooking(machineId, parsedDate);
-      } catch (err: any) {
-        alert(err.message);
+      } catch (err: unknown) {
+        // FIX: Explicitly typecast to safely extract message string
+        const message = err instanceof Error ? err.message : 'An unknown scheduling block validation error occurred.';
+        alert(message);
       }
     }
   }

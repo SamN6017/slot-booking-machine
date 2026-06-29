@@ -6,7 +6,7 @@ import { environment } from '../../environments/environment';
   providedIn: 'root'
 })
 export class AuthService {
-  private supabase: SupabaseClient;
+  public supabase: SupabaseClient;
 
   // 1. Core reactive state container using Angular 21 Signals
   private userSignal = signal<User | null>(null);
