@@ -23,10 +23,16 @@ export class Dashboard implements OnInit {
   timeSlots = signal<string[]>([]);
   expandedDayTime = signal<number | null>(null);
 
-  /**
-   * FIX: Caches changes into an O(1) hash map using direct literal database strings.
-   * This bypasses JavaScript's automatic UTC/local timezone manipulation on browser environments.
-   */
+  public dashboardComponentDateParser(timeStr: string, baseDate: Date): Date {
+    return this.parseTimeToDate(timeStr, baseDate);
+  }
+
+ 
+  public isSlotInPast(slotDate: Date): boolean {
+    const now = new Date();
+    return slotDate.getTime() < now.getTime();
+  }
+
   bookingLookup = computed(() => {
     const map = new Map<string, Booking>();
     for (const b of this.bookings()) {
@@ -84,7 +90,7 @@ export class Dashboard implements OnInit {
 
   getBookingAt(machineId: number, targetDate: Date, slotTimeString: string): Booking | null {
     const parsedDate = this.parseTimeToDate(slotTimeString, targetDate);
-    
+
     const pad = (num: number) => String(num).padStart(2, '0');
     const yyyy = parsedDate.getFullYear();
     const mm = pad(parsedDate.getMonth() + 1);
@@ -95,7 +101,7 @@ export class Dashboard implements OnInit {
     // Matches 'YYYY-MM-DDTHH:mm:ss+00:00' exactly as it appears in your console log
     const estLiteralStr = `${yyyy}-${mm}-${dd}T${hh}:${min}:00+00:00`;
     const key = `${machineId}_${estLiteralStr}`;
-    
+
     return this.bookingLookup().get(key) || null;
   }
 

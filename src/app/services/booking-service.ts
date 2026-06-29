@@ -1,4 +1,4 @@
-import { inject, Injectable, signal, NgZone } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { AuthService } from './auth-service';
 
 export interface Machine {
@@ -19,7 +19,6 @@ export interface Booking {
 @Injectable({ providedIn: 'root' })
 export class BookingService {
   private authService = inject(AuthService);
-  private zone = inject(NgZone);
 
   // FIX: Reuses the existing client instance from AuthService to prevent undefined session behavior
   private supabase = this.authService.supabase;

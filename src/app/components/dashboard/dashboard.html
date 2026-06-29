@@ -1,74 +1,150 @@
-<div class="container-fluid px-4 mt-4">
+<div class="container-fluid px-2 px-md-4 mt-4">
 
-  <div class="card shadow-sm border-0 mb-4 bg-white p-4">
-    <h2 class="fw-bold text-dark mb-1"><i class="bi bi-cpu-fill me-2 text-primary"></i>Team Machine Dashboard</h2>
-    <p class="text-muted small mb-0">Click on any day bar to expand its schedule. Click an open slot to book it. Your reservations appear in green; teammates' reservations appear in red.</p>
-  </div>
+    <div class="card shadow-sm border-0 mb-4 bg-white p-3 p-md-4">
+        <h2 class="fw-bold text-dark mb-1 fs-3 fs-md-2">
+            <i class="bi bi-cpu-fill me-2 text-primary"></i>Team Machine Dashboard
+        </h2>
+        <p class="text-muted small mb-0">
+            Click on any day bar to expand its schedule. Your reservations appear in green; teammates' reservations
+            appear in red. Past slots are automatically locked.
+        </p>
+    </div>
 
-  @for (day of activeDays(); track day.getTime()) {
+    @for (day of activeDays(); track day.getTime()) {
     @let isExpanded = expandedDayTime() === day.getTime();
 
     <div class="card shadow-sm border-0 mb-2">
-      <div (click)="toggleDayAccordion(day.getTime())"
-           class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center"
-           style="cursor: pointer; user-select: none;">
-        <span class="fw-bold">
-          <i class="bi bi-calendar-event me-2 text-warning"></i>
-          {{ day | date: 'EEEE, MMMM d, y' }}
-        </span>
-        <i class="bi" [class.bi-chevron-down]="!isExpanded" [class.bi-chevron-up]="isExpanded"></i>
-      </div>
-
-      @if (isExpanded) {
-        <div class="card-body p-0 border-top">
-          <div class="table-responsive">
-            <table class="table table-bordered text-center align-middle mb-0">
-              <thead class="table-light text-uppercase small fw-bold text-secondary">
-                <tr>
-                  <th style="width: 15%;">Time Block</th>
-                  @for (machine of machines(); track machine.id) {
-                    <th>{{ machine.name }}</th>
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                @for (slot of timeSlots(); track slot) {
-                  <tr>
-                    <td class="fw-bold bg-light text-secondary small py-2">
-                      {{ slot }}
-                    </td>
-
-                    @for (machine of machines(); track machine.id) {
-                      <td class="p-1">
-                        @let existingBooking = getBookingAt(machine.id, day, slot);
-
-                        @if (existingBooking) {
-                          @let isMine = existingBooking.user_id === authService.currentUserId();
-
-                          <div (click)="handleSlotInteraction(machine.id, slot, day)"
-                               class="p-2 rounded-3 text-white fw-semibold text-truncate small shadow-sm"
-                               [class.bg-success]="isMine" 
-                               [class.bg-danger]="!isMine"
-                               [style.cursor]="isMine ? 'pointer' : 'not-allowed'"
-                               [title]="isMine ? 'Click to release your booking' : 'Reserved by teammate'">
-                            <i class="bi" [class.bi-person-check-fill]="isMine" [class.bi-person-x-fill]="!isMine"></i>
-                            <span class="ms-1">{{ existingBooking.user_email || 'Reserved Slot' }}</span>
-                          </div>
-                        } @else {
-                          <button (click)="handleSlotInteraction(machine.id, slot, day)"
-                                  class="btn btn-outline-primary w-100 py-2 fw-semibold shadow-sm rounded-3">
-                            <i class="bi bi-plus-circle me-1"></i> Book Block
-                          </button>
-                        }
-                      </td>
-                    }
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+        <div (click)="toggleDayAccordion(day.getTime())"
+            class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center"
+            style="cursor: pointer; user-select: none;">
+            <span class="fw-bold text-truncate pe-2">
+                <i class="bi bi-calendar-event me-2 text-warning"></i>
+                {{ day | date: 'EEEE, MMMM d, y' }}
+            </span>
+            <i class="bi" [class.bi-chevron-down]="!isExpanded" [class.bi-chevron-up]="isExpanded"></i>
         </div>
-      }
+
+        @if (isExpanded) {
+        <div class="card-body p-0 border-top">
+
+            <div class="d-block d-lg-none p-2 bg-light">
+                @for (slot of timeSlots(); track slot) {
+                @let slotDate = dashboardComponentDateParser(slot, day);
+                @let isPast = isSlotInPast(slotDate);
+
+                <div class="card mb-2 border shadow-sm" [class.opacity-50]="isPast">
+                    <div
+                        class="card-header bg-secondary text-white py-1.5 small fw-bold d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-clock me-1"></i> {{ slot }}</span>
+                        @if (isPast) {
+                        <span class="badge bg-light text-dark py-1 text-uppercase font-monospace"
+                            style="font-size: 0.65rem;">Expired</span>
+                        }
+                    </div>
+
+                    <div class="card-body p-2 bg-white">
+                        <div class="row g-2">
+                            @for (machine of machines(); track machine.id) {
+                            <div class="col-12">
+                                <div
+                                    class="d-flex align-items-center justify-content-between border rounded p-2 bg-light-subtle">
+                                    <span class="fw-semibold text-secondary small text-truncate me-2"
+                                        style="max-width: 40%;">
+                                        {{ machine.name }}
+                                    </span>
+
+                                    <div class="flex-grow-1 text-end" [style.pointer-events]="isPast ? 'none' : 'auto'">
+                                        @let existingBooking = getBookingAt(machine.id, day, slot);
+
+                                        @if (existingBooking) {
+                                        @let isMine = existingBooking.user_id === authService.currentUserId();
+                                        <div (click)="handleSlotInteraction(machine.id, slot, day)"
+                                            class="p-2 d-block rounded-3 text-white fw-semibold text-truncate small shadow-sm w-100 text-center"
+                                            [class.bg-success]="isMine" [class.bg-danger]="!isMine"
+                                            [style.cursor]="isPast ? 'not-allowed' : (isMine ? 'pointer' : 'not-allowed')"
+                                            [title]="isMine ? 'Click to release booking: ' + existingBooking.user_email : 'Reserved by ' + existingBooking.user_email">
+                                            <i class="bi" [class.bi-person-check-fill]="isMine"
+                                                [class.bi-person-x-fill]="!isMine"></i>
+                                            <span class="ms-1">{{ existingBooking.user_email || 'Reserved' }}</span>
+                                        </div>
+                                        } @else {
+                                        <button (click)="handleSlotInteraction(machine.id, slot, day)"
+                                            class="btn btn-sm w-100 py-2 fw-semibold shadow-sm rounded-3 text-truncate"
+                                            [class.btn-outline-primary]="!isPast" [class.btn-outline-secondary]="isPast"
+                                            [disabled]="isPast">
+                                            <i class="bi bi-plus-circle me-1"></i> Book
+                                        </button>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                }
+            </div>
+
+            <div class="d-none d-lg-block table-responsive">
+                <table class="table table-bordered text-center align-middle mb-0"
+                    style="table-layout: fixed; width: 100%;">
+                    <thead class="table-light text-uppercase small fw-bold text-secondary">
+                        <tr>
+                            <th style="width: 150px;">Time Block</th>
+                            @for (machine of machines(); track machine.id) {
+                            <th>{{ machine.name }}</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (slot of timeSlots(); track slot) {
+                        @let slotDate = dashboardComponentDateParser(slot, day);
+                        @let isPast = isSlotInPast(slotDate);
+
+                        <tr [class.table-light]="isPast" [class.opacity-50]="isPast">
+                            <td class="fw-bold bg-light text-secondary small py-2">
+                                {{ slot }}
+                                @if (isPast) {
+                                <div class="text-muted font-monospace text-uppercase mt-0"
+                                    style="font-size: 0.6rem; letter-spacing: 0.5px;">[Over]</div>
+                                }
+                            </td>
+
+                            @for (machine of machines(); track machine.id) {
+                            <td class="p-1" style="max-width: 180px; min-width: 120px; overflow: hidden;">
+                                <div [style.pointer-events]="isPast ? 'none' : 'auto'">
+                                    @let existingBooking = getBookingAt(machine.id, day, slot);
+
+                                    @if (existingBooking) {
+                                    @let isMine = existingBooking.user_id === authService.currentUserId();
+
+                                    <div (click)="handleSlotInteraction(machine.id, slot, day)"
+                                        class="p-2 d-block rounded-3 text-white fw-semibold text-truncate small shadow-sm w-100 text-center"
+                                        [class.bg-success]="isMine" [class.bg-danger]="!isMine"
+                                        [style.cursor]="isPast ? 'not-allowed' : (isMine ? 'pointer' : 'not-allowed')"
+                                        [title]="isMine ? 'Click to release booking: ' + existingBooking.user_email : 'Reserved by ' + existingBooking.user_email">
+                                        <i class="bi" [class.bi-person-check-fill]="isMine"
+                                            [class.bi-person-x-fill]="!isMine"></i>
+                                        <span class="ms-1">{{ existingBooking.user_email || 'Reserved Slot' }}</span>
+                                    </div>
+                                    } @else {
+                                    <button (click)="handleSlotInteraction(machine.id, slot, day)"
+                                        class="btn btn-outline-primary w-100 py-2 fw-semibold shadow-sm rounded-3 text-truncate"
+                                        [disabled]="isPast">
+                                        <i class="bi bi-plus-circle me-1"></i> Book Block
+                                    </button>
+                                    }
+                                </div>
+                            </td>
+                            }
+                        </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+        }
     </div>
-  }
+    }
 </div>
